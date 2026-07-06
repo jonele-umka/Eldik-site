@@ -4,14 +4,27 @@ import OrdersPage from "./pages/OrdersPage.jsx";
 import PaymentsPage from "./pages/PaymentsPage.jsx";
 import DebtorsPage from "./pages/DebtorsPage.jsx";
 import { ReturnsPage, ExpensesPage, ClientsPage } from "./pages/MiscPages";
+import ClientDetailPage from "./pages/ClientDetailPage.jsx";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 import { ProductionPage, DeliveryPage } from "./pages/ProductionPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
+import LoginPage from "./pages/LoginPage.jsx";
 import { S } from "./utils/styles.js";
 import { useBreakpoint } from "./hooks/useBreakpoint.js";
-
+import { DEFAULT_API_URL } from "./config.js";
+import FinancePage from "./pages/FinancePage.jsx";
+import {
+  getStoredUser,
+  setStoredUser,
+  checkPassword,
+  getAllowedPages,
+} from "./utils/auth.js";
+const CACHE_KEY = "app_data_cache_v1";
+const CACHE_TIME_KEY = "app_data_cache_time";
+const CACHE_TTL = 1000 * 60 * 5; // 5 минут
 const PAGES = [
   { key: "orders", icon: "📋", label: "Заказы" },
+  { key: "finance", icon: "💰", label: "Финансы" },
   { key: "payments", icon: "💳", label: "Платежи" },
   { key: "debtors", icon: "⚠️", label: "Должники" },
   { key: "returns", icon: "↩️", label: "Возвраты" },
@@ -28,12 +41,13 @@ const BOTTOM_NAV_PAGES = [
   "orders",
   "debtors",
   "analytics",
-  "delivery",
-  "settings",
+  "production",
+  "finance",
 ];
 
 const ENDPOINTS = [
   ["orders", "orders"],
+  ["finance", "financeReport"],
   ["payments", "payments"],
   ["debtors", "debtors"],
   ["returns", "returns"],
@@ -42,15 +56,21 @@ const ENDPOINTS = [
   ["analytics", "analytics"],
   ["months", "analyticsMonths"],
   ["production", "production"],
+  ["prices", "prices"],
 ];
 
+function firstAllowedPage(allowed) {
+  if (allowed === "all") return "orders";
+  return allowed[0] || "orders";
+}
+
 // ── Боковая панель: полная (десктоп) ──────────────────
-function Sidebar({ page, setPage, setSearch, updatedAt }) {
+function Sidebar({ page, setPage, setSearch, updatedAt, pages }) {
   return (
     <aside style={S.sidebar}>
       <div style={S.logo}>📦 Бизнес</div>
       <nav style={S.nav}>
-        {PAGES.map((p) => (
+        {pages.map((p) => (
           <NavItem
             key={p.key}
             icon={p.icon}
@@ -80,12 +100,12 @@ function Sidebar({ page, setPage, setSearch, updatedAt }) {
 }
 
 // ── Боковая панель: иконки (планшет) ──────────────────
-function SidebarCollapsed({ page, setPage, setSearch }) {
+function SidebarCollapsed({ page, setPage, setSearch, pages }) {
   return (
     <aside style={S.sidebarCollapsed}>
       <div style={S.logoCollapsed}>📦</div>
       <nav style={S.navCollapsed}>
-        {PAGES.map((p) => {
+        {pages.map((p) => {
           const active = page === p.key;
           return (
             <div
@@ -118,15 +138,15 @@ function SidebarCollapsed({ page, setPage, setSearch }) {
 }
 
 // ── Нижняя навигация (мобильный) ──────────────────────
-function BottomNav({ page, setPage, setSearch }) {
+function BottomNav({ page, setPage, setSearch, pages }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const mainPages = PAGES.filter((p) => BOTTOM_NAV_PAGES.includes(p.key));
-  const morePages = PAGES.filter((p) => !BOTTOM_NAV_PAGES.includes(p.key));
+  const mainPages = pages.filter((p) => BOTTOM_NAV_PAGES.includes(p.key));
+  const morePages = pages.filter((p) => !BOTTOM_NAV_PAGES.includes(p.key));
 
   return (
     <>
       {/* Шторка "Ещё" */}
-      {moreOpen && (
+      {moreOpen && morePages.length > 0 && (
         <div
           style={{
             position: "fixed",
@@ -232,43 +252,53 @@ function BottomNav({ page, setPage, setSearch }) {
             </button>
           );
         })}
-        {/* Кнопка "Ещё" */}
-        <button
-          onClick={() => setMoreOpen((v) => !v)}
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 3,
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color:
-              !BOTTOM_NAV_PAGES.includes(page) && !moreOpen
-                ? "var(--accent)"
-                : moreOpen
+        {/* Кнопка "Ещё" — только если есть, что показать */}
+        {morePages.length > 0 && (
+          <button
+            onClick={() => setMoreOpen((v) => !v)}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 3,
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color:
+                !BOTTOM_NAV_PAGES.includes(page) && !moreOpen
                   ? "var(--accent)"
-                  : "var(--muted)",
-            padding: "6px 2px",
-            transition: "color .15s",
-          }}
-        >
-          <span style={{ fontSize: 20 }}>☰</span>
-          <span
-            style={{ fontSize: 9.5, fontWeight: 400, letterSpacing: ".02em" }}
+                  : moreOpen
+                    ? "var(--accent)"
+                    : "var(--muted)",
+              padding: "6px 2px",
+              transition: "color .15s",
+            }}
           >
-            Ещё
-          </span>
-        </button>
+            <span style={{ fontSize: 20 }}>☰</span>
+            <span
+              style={{ fontSize: 9.5, fontWeight: 400, letterSpacing: ".02em" }}
+            >
+              Ещё
+            </span>
+          </button>
+        )}
       </div>
     </>
   );
 }
 
 // ── Топбар ─────────────────────────────────────────────
-function Topbar({ label, search, setSearch, onRefresh, loading, isMobile }) {
+function Topbar({
+  label,
+  search,
+  setSearch,
+  onRefresh,
+  onLogout,
+  loading,
+  isMobile,
+}) {
   return (
     <div
       style={{
@@ -327,6 +357,21 @@ function Topbar({ label, search, setSearch, onRefresh, loading, isMobile }) {
           </span>
           {!isMobile && "Обновить"}
         </button>
+        <button
+          onClick={onLogout}
+          title="Выйти"
+          style={{
+            background: "var(--s2)",
+            border: "1px solid var(--b1)",
+            borderRadius: 8,
+            padding: "7px 10px",
+            color: "var(--text)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          🚪
+        </button>
       </div>
     </div>
   );
@@ -334,19 +379,29 @@ function Topbar({ label, search, setSearch, onRefresh, loading, isMobile }) {
 
 // ── Root App ────────────────────────────────────────────
 export default function App() {
-  const [page, setPage] = useState("orders");
+  const [user, setUser] = useState(() => getStoredUser());
+  const [page, setPage] = useState(() =>
+    firstAllowedPage(getAllowedPages(getStoredUser())),
+  );
+  const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState("");
   const [apiUrl, setApiUrl] = useState(
-    () => localStorage.getItem("gsApiUrl") || "",
+    () => localStorage.getItem("gsApiUrl") || DEFAULT_API_URL,
   );
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
   const { isMobile, isTablet, isDesktop } = useBreakpoint();
+  const [clientReturnPage, setClientReturnPage] = useState("clients");
 
-  const load = useCallback(async (url) => {
-    if (!url) return;
+  const allowedPages = user ? getAllowedPages(user) : [];
+  const visiblePages =
+    allowedPages === "all"
+      ? PAGES
+      : PAGES.filter((p) => allowedPages.includes(p.key));
+  const refreshInBackground = useCallback(async (url) => {
     setLoading(true);
+
     const results = await Promise.allSettled(
       ENDPOINTS.map(([key, action]) =>
         fetch(`${url}?action=${action}`)
@@ -355,12 +410,22 @@ export default function App() {
           .catch(() => ({ key, d: [] })),
       ),
     );
+
     const next = {};
     results.forEach((r) => {
-      if (r.status === "fulfilled") next[r.value.key] = r.value.d;
+      if (r.status === "fulfilled") {
+        next[r.value.key] = r.value.d;
+      }
     });
+
     setData(next);
+
+    // кешируем
+    localStorage.setItem(CACHE_KEY, JSON.stringify(next));
+    localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+
     setLoading(false);
+
     setUpdatedAt(
       new Date().toLocaleTimeString("ru-RU", {
         hour: "2-digit",
@@ -368,21 +433,83 @@ export default function App() {
       }),
     );
   }, []);
+  const load = useCallback(async (url, { force = false } = {}) => {
+    if (!url) return;
 
-  useEffect(() => {
-    if (apiUrl) load(apiUrl);
-    else setPage("settings");
+    const now = Date.now();
+    const cachedTime = Number(localStorage.getItem(CACHE_TIME_KEY) || 0);
+
+    // 1. если есть свежий кеш → используем сразу
+    if (!force && cachedTime && now - cachedTime < CACHE_TTL) {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        setData(JSON.parse(cached));
+        setUpdatedAt(
+          new Date(cachedTime).toLocaleTimeString("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        );
+      }
+
+      // фоновой апдейт НЕ блокирует UI
+      refreshInBackground(url);
+      return;
+    }
+
+    // 2. если кеша нет или force → грузим сразу
+    await refreshInBackground(url);
   }, []);
+
+  // При старте: если пользователь уже был залогинен (сохранён в браузере),
+  // сразу подгружаем данные и подстраховываемся, что открытая страница
+  // ему всё ещё разрешена.
+  useEffect(() => {
+    if (!user) return;
+    const allowed = getAllowedPages(user);
+    if (allowed !== "all" && !allowed.includes(page)) {
+      setPage(firstAllowedPage(allowed));
+    }
+    if (apiUrl) load(apiUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLogin = (pwd) => {
+    const u = checkPassword(pwd);
+    if (!u) return false;
+    setStoredUser(u);
+    setUser(u);
+    const allowed = getAllowedPages(u);
+    setPage(firstAllowedPage(allowed));
+    if (apiUrl) load(apiUrl);
+    return true;
+  };
+
+  const handleLogout = () => {
+    setStoredUser("");
+    setUser("");
+    setSearch("");
+  };
 
   const handleSave = (url) => {
     setApiUrl(url);
     localStorage.setItem("gsApiUrl", url);
     load(url);
-    setPage("orders");
+    setPage(firstAllowedPage(getAllowedPages(user)));
   };
+  const openClientDetail = (clientName, fromPage = page) => {
+    setClientReturnPage(fromPage);
+    setSelectedClient(clientName);
+    setPage("clientDetail");
+  };
+  if (!user) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   const renderPage = () => {
-    if (loading) return <Spinner />;
+    {
+      loading && <div style={{ padding: 6, fontSize: 12 }}>Обновление...</div>;
+    }
     switch (page) {
       case "orders":
         return (
@@ -391,8 +518,11 @@ export default function App() {
             expenses={data.expenses}
             search={search}
             isMobile={isMobile}
+            onSelectClient={openClientDetail}
           />
         );
+      case "finance":
+        return <FinancePage data={data.finance} orders={data.orders} />;
       case "payments":
         return <PaymentsPage data={data.payments} search={search} />;
       case "debtors":
@@ -402,7 +532,24 @@ export default function App() {
       case "expenses":
         return <ExpensesPage data={data.expenses} search={search} />;
       case "clients":
-        return <ClientsPage data={data.clients} search={search} />;
+        return (
+          <ClientsPage
+            data={data.clients}
+            search={search}
+            onSelectClient={openClientDetail}
+          />
+        );
+      case "clientDetail":
+        return (
+          <ClientDetailPage
+            client={selectedClient}
+            orders={data.orders}
+            payments={data.payments}
+            returns={data.returns}
+            isMobile={isMobile}
+            onBack={() => setPage(clientReturnPage)}
+          />
+        );
       case "analytics":
         return (
           <AnalyticsPage
@@ -412,17 +559,40 @@ export default function App() {
           />
         );
       case "production":
-        return <ProductionPage data={data.production} search={search} />;
+        return (
+          <ProductionPage
+            data={data.production}
+            prices={data.prices}
+            search={search}
+            isMobile={isMobile}
+            isTablet={isTablet}
+          />
+        );
       case "delivery":
-        return <DeliveryPage data={data.production} search={search} />;
+        return (
+          <DeliveryPage
+            data={data.production}
+            search={search}
+            isMobile={isMobile}
+          />
+        );
       case "settings":
-        return <SettingsPage apiUrl={apiUrl} onSave={handleSave} />;
+        return (
+          <SettingsPage
+            apiUrl={apiUrl}
+            onSave={handleSave}
+            user={user}
+            onLogout={handleLogout}
+          />
+        );
       default:
         return null;
     }
   };
 
   const currentPage = PAGES.find((p) => p.key === page);
+  const topbarLabel =
+    page === "clientDetail" ? selectedClient || "Клиент" : currentPage?.label;
   const contentStyle = isMobile ? S.contentMobile : S.content;
 
   return (
@@ -434,18 +604,25 @@ export default function App() {
           setPage={setPage}
           setSearch={setSearch}
           updatedAt={updatedAt}
+          pages={visiblePages}
         />
       )}
       {isTablet && (
-        <SidebarCollapsed page={page} setPage={setPage} setSearch={setSearch} />
+        <SidebarCollapsed
+          page={page}
+          setPage={setPage}
+          setSearch={setSearch}
+          pages={visiblePages}
+        />
       )}
 
       <div style={S.main}>
         <Topbar
-          label={currentPage?.label}
+          label={topbarLabel}
           search={search}
           setSearch={setSearch}
           onRefresh={() => load(apiUrl)}
+          onLogout={handleLogout}
           loading={loading}
           isMobile={isMobile}
         />
@@ -453,7 +630,12 @@ export default function App() {
       </div>
 
       {isMobile && (
-        <BottomNav page={page} setPage={setPage} setSearch={setSearch} />
+        <BottomNav
+          page={page}
+          setPage={setPage}
+          setSearch={setSearch}
+          pages={visiblePages}
+        />
       )}
     </div>
   );

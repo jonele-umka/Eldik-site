@@ -1,7 +1,7 @@
 import { fmtM } from "../utils/index.js";
 import { Badge, MoneyCell } from "./UI.jsx";
 
-export function OrderCard({ group }) {
+export function OrderCard({ group, onSelectClient }) {
   const {
     client,
     market,
@@ -74,7 +74,25 @@ export function OrderCard({ group }) {
               flexShrink: 0,
             }}
           />
-          <span style={{ fontWeight: 700, fontSize: 14 }}>{client}</span>
+          <span
+            onClick={() => onSelectClient?.(client)}
+            style={{
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: onSelectClient ? "pointer" : "default",
+              color: onSelectClient ? "var(--accent)" : "inherit",
+            }}
+            onMouseEnter={(e) => {
+              if (onSelectClient) {
+                e.currentTarget.style.textDecoration = "underline";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecoration = "none";
+            }}
+          >
+            {client}
+          </span>
           <span
             style={{
               fontSize: 11,

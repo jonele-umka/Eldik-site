@@ -7,35 +7,62 @@ import {
   getMonth,
   parseDate,
 } from "../utils/index.js";
+
 import { KPI, Select } from "../components/UI.jsx";
 import { OrderCard } from "../components/OrderCard.jsx";
 import { S } from "../utils/styles.js";
+import { ClientAutocomplete } from "../components/ClientAutocomplete.jsx";
 
 const GPAGE = 20;
 
-export default function OrdersPage({ data, expenses, search, isMobile }) {
+export default function OrdersPage({
+  data,
+  expenses,
+  search,
+  isMobile,
+  onSelectClient,
+}) {
+  const arr = data || [];
+
+  // filters
   const [market, setMarket] = useState("");
   const [status, setStatus] = useState("");
   const [month, setMonth] = useState("");
+
+  // 🔥 split client logic (IMPORTANT FIX)
+  const [client, setClient] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
+
   const [page, setPage] = useState(1);
   const [sortDir, setSortDir] = useState("desc");
 
-  const arr = data || [];
+  // base client list (NEVER filtered by table state)
+  const clients = useMemo(() => {
+    return unique(arr, "client").sort();
+  }, [arr]);
 
+  // main filtered rows
   const filteredRows = useMemo(() => {
     let r = filterSearch(
       arr,
       ["client", "product", "market", "orderId", "comment"],
       search,
     );
+
     if (market) r = r.filter((x) => x.market === market);
     if (status) r = r.filter((x) => x.status === status);
     if (month) r = r.filter((x) => getMonth(x.orderDate) === month);
+
+    if (client) {
+      r = r.filter((x) => x.client === client);
+    }
+
     return r;
-  }, [arr, search, market, status, month]);
+  }, [arr, search, market, status, month, client]);
 
   const allGroups = useMemo(() => {
     const groups = buildOrderGroups(filteredRows);
+
     return groups.sort((a, b) => {
       const diff = parseDate(b.orderDate) - parseDate(a.orderDate);
       return sortDir === "desc" ? diff : -diff;
@@ -45,6 +72,7 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
   const totalPages = Math.ceil(allGroups.length / GPAGE);
   const groups = allGroups.slice((page - 1) * GPAGE, page * GPAGE);
 
+  // KPIs
   const kpiTotal = allGroups.reduce((s, g) => s + g.totalSum, 0);
   const kpiPaid = allGroups.reduce((s, g) => s + g.paidAmount, 0);
   const kpiRet = allGroups.reduce((s, g) => s + g.returnedAmount, 0);
@@ -52,10 +80,12 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
     (s, g) => s + Math.max(0, g.totalSum - g.returnedAmount - g.paidAmount),
     0,
   );
+
   const totalExpenses = (expenses || []).reduce(
     (s, r) => s + Number(r.amount || 0),
     0,
   );
+
   const balance = kpiPaid - kpiRet - totalExpenses;
 
   const monthOptions = [
@@ -63,10 +93,12 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
   ]
     .sort()
     .reverse();
+
   const kpiGrid = isMobile ? S.kpiGridMobile : S.kpiGrid;
 
   return (
     <>
+      {/* KPI */}
       <div style={kpiGrid}>
         <KPI label="Заказов" value={allGroups.length} color="var(--accent)" />
         <KPI label="Сумма" value={fmtM(kpiTotal)} color="var(--accent)" />
@@ -79,12 +111,13 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
           color="var(--yellow)"
         />
         <KPI
-          label="Баланс"
+          label="Касса"
           value={fmtM(balance)}
           color={balance >= 0 ? "var(--green)" : "var(--red)"}
         />
       </div>
 
+      {/* filters */}
       <div style={{ ...S.filters, justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <Select
@@ -96,6 +129,7 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
             options={unique(arr, "market")}
             placeholder="Рынок"
           />
+
           <Select
             value={status}
             onChange={(v) => {
@@ -105,6 +139,7 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
             options={unique(arr, "status")}
             placeholder="Статус"
           />
+
           {!isMobile && (
             <Select
               value={month}
@@ -117,6 +152,8 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
             />
           )}
         </div>
+
+        {/* sort */}
         <div style={{ display: "flex", gap: 6 }}>
           {isMobile && (
             <Select
@@ -129,6 +166,7 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
               placeholder="Месяц"
             />
           )}
+
           <button
             onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
             style={{
@@ -139,8 +177,6 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
               color: "var(--text)",
               fontSize: 12,
               cursor: "pointer",
-              fontFamily: "Inter,sans-serif",
-              whiteSpace: "nowrap",
             }}
           >
             {sortDir === "desc" ? "↓" : "↑"}
@@ -148,6 +184,7 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
         </div>
       </div>
 
+      {/* legend */}
       {!isMobile && (
         <div
           style={{
@@ -163,17 +200,13 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
             ["var(--yellow)", "Частично"],
             ["var(--red)", "Не оплачен"],
           ].map(([color, label]) => (
-            <span
-              key={label}
-              style={{ display: "flex", alignItems: "center", gap: 5 }}
-            >
+            <span key={label} style={{ display: "flex", gap: 5 }}>
               <span
                 style={{
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
                   background: color,
-                  display: "inline-block",
                 }}
               />
               {label}
@@ -182,83 +215,47 @@ export default function OrdersPage({ data, expenses, search, isMobile }) {
         </div>
       )}
 
+      {/* info */}
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
         {allGroups.length} заказов · стр. {page} из {Math.max(1, totalPages)}
       </div>
 
+      {/* list */}
       {groups.length === 0 ? (
-        <div
-          style={{
-            ...S.card,
-            padding: 40,
-            textAlign: "center",
-            color: "var(--muted)",
-          }}
-        >
+        <div style={{ ...S.card, padding: 40, textAlign: "center" }}>
           Нет данных
         </div>
       ) : (
         groups.map((g) => (
-          <OrderCard key={g.oid} group={g} isMobile={isMobile} />
+          <OrderCard
+            key={g.oid}
+            group={g}
+            isMobile={isMobile}
+            onSelectClient={onSelectClient}
+          />
         ))
       )}
 
+      {/* pagination */}
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 6,
-            marginTop: 16,
-          }}
-        >
-          <button
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-            style={{
-              background: "var(--s2)",
-              border: "1px solid var(--b1)",
-              borderRadius: 6,
-              padding: "5px 12px",
-              color: "var(--text)",
-              cursor: "pointer",
-              opacity: page === 1 ? 0.4 : 1,
-            }}
-          >
+        <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
+          <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
             ‹
           </button>
+
           {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
             const p = Math.max(1, Math.min(page - 2, totalPages - 4)) + i;
+
             return (
-              <button
-                key={p}
-                onClick={() => setPage(p)}
-                style={{
-                  background: p === page ? "var(--accent)" : "var(--s2)",
-                  border:
-                    "1px solid " + (p === page ? "var(--accent)" : "var(--b1)"),
-                  borderRadius: 6,
-                  padding: "5px 12px",
-                  color: p === page ? "#fff" : "var(--text)",
-                  cursor: "pointer",
-                }}
-              >
+              <button key={p} onClick={() => setPage(p)}>
                 {p}
               </button>
             );
           })}
+
           <button
             disabled={page === totalPages}
             onClick={() => setPage((p) => p + 1)}
-            style={{
-              background: "var(--s2)",
-              border: "1px solid var(--b1)",
-              borderRadius: 6,
-              padding: "5px 12px",
-              color: "var(--text)",
-              cursor: "pointer",
-              opacity: page === totalPages ? 0.4 : 1,
-            }}
           >
             ›
           </button>

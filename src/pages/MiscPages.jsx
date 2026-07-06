@@ -179,7 +179,7 @@ export function ExpensesPage({ data, search }) {
   );
 }
 
-export function ClientsPage({ data, search }) {
+export function ClientsPage({ data, search, onSelectClient }) {
   const [market, setMarket] = useState("");
   const arr = data || [];
 
@@ -226,7 +226,23 @@ export function ClientsPage({ data, search }) {
               <TR key={r.id || i}>
                 <TD style={{ color: "var(--muted)" }}>{r.market}</TD>
                 <TD>
-                  <b>{r.name}</b>
+                  <b
+                    onClick={() => onSelectClient?.(r.name)}
+                    style={{
+                      cursor: onSelectClient ? "pointer" : "default",
+                      color: onSelectClient ? "var(--accent)" : "inherit",
+                      textDecoration: onSelectClient ? "none" : "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (onSelectClient)
+                        e.currentTarget.style.textDecoration = "underline";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.textDecoration = "none";
+                    }}
+                  >
+                    {r.name}
+                  </b>
                 </TD>
                 <TD style={{ color: "var(--muted)" }}>{r.address || "—"}</TD>
                 <TD>
